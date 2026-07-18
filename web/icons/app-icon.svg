@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Body Check">
+  <defs>
+    <linearGradient id="bg" x1="72" y1="48" x2="440" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M256 408C201 366 112 302 112 210c0-56 40-98 94-98 28 0 52 13 68 34 16-21 40-34 68-34 54 0 94 42 94 98 0 92-89 156-144 198l-18 14-18-14Z" fill="#fff"/>
+  <path d="M142 256h66l24-56 46 116 30-60h62" fill="none" stroke="#3B82F6" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

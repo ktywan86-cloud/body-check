@@ -1,0 +1,38 @@
+name: body_check
+description: Flutter Web-based weight and health management responsive application.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Icon font used by Flutter widgets and transitive UI components
+  cupertino_icons: ^1.0.8
+
+  # Local persistence storage
+  shared_preferences: ^2.3.3
+
+  # Advanced lines, bars, and pie charts
+  fl_chart: ^0.63.0
+
+  # Localization and date formats
+  intl: ^0.20.2
+
+  # State management and decoupling layer
+  provider: ^6.0.5
+
+  # Network requests for API interop
+  http: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

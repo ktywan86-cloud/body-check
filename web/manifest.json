@@ -1,0 +1,19 @@
+{
+    "name": "Body Check",
+    "short_name": "BodyCheck",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0e1117",
+    "theme_color": "#3b82f6",
+    "description": "Flutter Web-based weight and health management responsive dashboard.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/app-icon.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
+}

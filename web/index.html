@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- flutter build --base-href 값으로 치환됩니다. -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Flutter Web-based weight and health management responsive dashboard.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Body Check">
+  <link rel="icon" type="image/svg+xml" href="icons/app-icon.svg">
+
+  <title>Body Check - Weight & Health Dashboard</title>
+  <link rel="manifest" href="manifest.json">
+
+</head>
+<body style="background-color: #0e1117; margin: 0; padding: 0;">
+  <!-- 로딩 스피너 디자인 -->
+  <div id="loading" style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #ffffff;">
+    <div style="width: 50px; height: 50px; border: 5px solid #2a2f3d; border-top: 5px solid #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;"></div>
+    <div style="font-size: 18px; font-weight: 500; letter-spacing: 0.5px;">Loading Body Check...</div>
+  </div>
+
+  <style>
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+
+  <!-- 최신 Flutter SDK 규격에 맞춘 부트스트랩 스크립트 호출 방식 -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
