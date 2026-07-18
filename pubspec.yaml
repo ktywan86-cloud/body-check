@@ -18,7 +18,7 @@ dependencies:
   shared_preferences: ^2.3.3
 
   # Advanced lines, bars, and pie charts
-  fl_chart: ^0.63.0
+  fl_chart: ^1.2.0
 
   # Localization and date formats
   intl: ^0.20.2
