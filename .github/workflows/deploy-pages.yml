@@ -26,6 +26,7 @@ jobs:
         # Pinned to the current v2 commit to reduce third-party action supply-chain risk.
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
+          flutter-version: '3.22.2'
           channel: stable
           cache: true
 
