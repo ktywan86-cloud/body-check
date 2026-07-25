@@ -21,7 +21,7 @@ dependencies:
   fl_chart: ^0.63.0
 
   # Localization and date formats
-  intl: ^0.20.2
+  intl: ^0.20.3
 
   # State management and decoupling layer
   provider: ^6.0.5
