@@ -15,7 +15,7 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # Local persistence storage
-  shared_preferences: ^2.3.3
+  shared_preferences: ^2.5.5
 
   # Advanced lines, bars, and pie charts
   fl_chart: ^0.63.0
