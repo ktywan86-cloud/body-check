@@ -252,6 +252,115 @@ class _SettingsScreenState extends State<SettingsScreen> {
     FocusScope.of(context).unfocus();
   }
 
+  /// 현재 로그인한 사용자의 비밀번호 찾기용 보안 질문을 설정하거나 변경합니다.
+  void _showRecoveryQuestionDialog() {
+    final provider = context.read<HealthProvider>();
+    final username = provider.currentUserId;
+    if (username == null) return;
+
+    final answerController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    // 기존에 저장된 질문이 프리셋 목록에 있을 때만 초기 선택값으로 사용합니다.
+    String? selected = provider.getSecurityQuestion(username);
+    if (!HealthProvider.securityQuestions.contains(selected)) {
+      selected = null;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('비밀번호 찾기 질문 설정',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '비밀번호를 잊었을 때 이 질문의 답변만으로 재설정할 수 있습니다.',
+                  style: TextStyle(fontSize: 12, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selected,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '보안 질문',
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  items: HealthProvider.securityQuestions
+                      .map((q) => DropdownMenuItem(
+                            value: q,
+                            child: Text(q, overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
+                  onChanged: (val) {
+                    setDialogState(() {
+                      selected = val;
+                    });
+                  },
+                  validator: (val) {
+                    if (val == null) return '보안 질문을 선택해 주세요.';
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: answerController,
+                  decoration: const InputDecoration(
+                    labelText: '답변',
+                    hintText: '대소문자와 공백은 구분하지 않습니다',
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                  validator: (val) {
+                    if (val == null || val.trim().isEmpty) {
+                      return '답변을 입력해 주세요.';
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('취소', style: TextStyle(color: Colors.grey)),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (!formKey.currentState!.validate()) return;
+
+                await provider.setRecovery(
+                    username, selected!, answerController.text);
+
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('보안 질문이 저장되었습니다. 이제 비밀번호를 잊어도 재설정할 수 있습니다.'),
+                    backgroundColor: Colors.green,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+              child: const Text('저장',
+                  style: TextStyle(
+                      color: Colors.blue, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showResetPasswordDialog(String username) {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -570,6 +679,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       label: const Text('로그아웃',
                           style: TextStyle(
                               fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 1-2. 비밀번호 찾기(보안 질문) 설정 카드
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border:
+                      Border.all(color: theme.dividerColor.withOpacity(0.3)),
+                ),
+                padding: const EdgeInsets.all(20.0),
+                margin: const EdgeInsets.only(bottom: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.teal.withOpacity(0.12),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.lock_reset,
+                              color: Colors.teal, size: 20),
+                        ),
+                        const SizedBox(width: 10),
+                        const Text(
+                          '비밀번호 찾기 (보안 질문)',
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      provider.currentUserId != null &&
+                              provider.hasRecovery(provider.currentUserId!)
+                          ? '현재 질문: ${provider.getSecurityQuestion(provider.currentUserId!)}'
+                          : '아직 보안 질문이 설정되지 않았습니다. 지금 설정해 두면 비밀번호를 잊어도 로그인 화면에서 직접 재설정할 수 있습니다.',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: theme.colorScheme.onSurface.withOpacity(0.5),
+                          height: 1.4),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        onPressed: _showRecoveryQuestionDialog,
+                        icon: const Icon(Icons.edit, size: 16),
+                        label: Text(
+                          provider.currentUserId != null &&
+                                  provider.hasRecovery(provider.currentUserId!)
+                              ? '보안 질문 변경'
+                              : '보안 질문 설정하기',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.bold),
+                        ),
+                      ),
                     ),
                   ],
                 ),

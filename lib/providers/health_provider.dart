@@ -54,6 +54,67 @@ class HealthProvider extends ChangeNotifier {
   String getUserRole(String username) =>
       _userCredentials[username]?['role'] as String? ?? 'user';
 
+  /// 비밀번호 복구에 사용할 보안 질문 프리셋입니다.
+  static const List<String> securityQuestions = [
+    '가장 좋아하는 음식은?',
+    '어릴 적 살던 동네 이름은?',
+    '처음 키운 반려동물의 이름은?',
+    '기억에 남는 여행지는?',
+    '초등학교 담임 선생님 성함은?',
+  ];
+
+  /// 복구 답변은 앞뒤 공백과 대소문자 차이를 무시하고 비교합니다.
+  String _normalizeAnswer(String answer) => answer.trim().toLowerCase();
+
+  /// 해당 사용자에게 설정된 보안 질문을 반환합니다. (미설정 시 null)
+  String? getSecurityQuestion(String username) {
+    final question = _userCredentials[username]?['securityQuestion'];
+    if (question is String && question.trim().isNotEmpty) return question;
+    return null;
+  }
+
+  /// 해당 사용자가 비밀번호 복구를 사용할 수 있는 상태인지 확인합니다.
+  bool hasRecovery(String username) {
+    final answer = _userCredentials[username]?['securityAnswer'];
+    return getSecurityQuestion(username) != null &&
+        answer is String &&
+        answer.isNotEmpty;
+  }
+
+  /// 복구 질문과 답변을 저장하거나 갱신합니다.
+  Future<bool> setRecovery(
+      String username, String question, String answer) async {
+    final cred = _userCredentials[username];
+    if (cred == null) return false;
+    if (question.trim().isEmpty || answer.trim().isEmpty) return false;
+
+    cred['securityQuestion'] = question.trim();
+    cred['securityAnswer'] = _normalizeAnswer(answer);
+    await _storageService.saveUserCredentials(_userCredentials);
+    notifyListeners();
+    return true;
+  }
+
+  /// 입력한 복구 답변이 저장된 답변과 일치하는지 확인합니다.
+  bool verifyRecoveryAnswer(String username, String answer) {
+    if (!hasRecovery(username)) return false;
+    final saved = _userCredentials[username]?['securityAnswer'] as String;
+    return saved == _normalizeAnswer(answer);
+  }
+
+  /// 보안 질문 답변이 일치할 때만 비밀번호를 새로 설정합니다.
+  Future<bool> resetPasswordWithRecovery(
+      String username, String answer, String newPassword) async {
+    final cleanPassword = newPassword.trim();
+    if (cleanPassword.isEmpty) return false;
+    if (!verifyRecoveryAnswer(username, answer)) return false;
+
+    _userCredentials[username]?['password'] = cleanPassword;
+    await _storageService.saveUserCredentials(_userCredentials);
+    notifyListeners();
+    return true;
+  }
+
   /// 가장 최근에 입력한 체중을 반환합니다.
   double? get currentWeight {
     if (_records.isEmpty) return null;
@@ -255,7 +316,9 @@ class HealthProvider extends ChangeNotifier {
 
   /// 신규 사용자 등록 (프로필 생성)
   Future<bool> register(String username, String password,
-      {String role = 'user'}) async {
+      {String role = 'user',
+      String? securityQuestion,
+      String? securityAnswer}) async {
     final cleanUsername = username.trim();
     if (cleanUsername.isEmpty || password.isEmpty) return false;
 
@@ -270,6 +333,10 @@ class HealthProvider extends ChangeNotifier {
     _userCredentials[cleanUsername] = {
       'password': password,
       'role': assignedRole,
+      if (securityQuestion != null && securityQuestion.trim().isNotEmpty)
+        'securityQuestion': securityQuestion.trim(),
+      if (securityAnswer != null && securityAnswer.trim().isNotEmpty)
+        'securityAnswer': _normalizeAnswer(securityAnswer),
     };
     await _storageService.saveUserCredentials(_userCredentials);
     notifyListeners();

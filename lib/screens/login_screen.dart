@@ -20,11 +20,16 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePin = true;
   bool _autoLogin = false;
 
+  // 비밀번호 찾기용 보안 질문 입력 상태
+  final _answerController = TextEditingController();
+  String? _selectedQuestion;
+
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
     _pinController.dispose();
+    _answerController.dispose();
     super.dispose();
   }
 
@@ -83,16 +88,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final provider = context.read<HealthProvider>();
 
-    // 1. Register new user
-    final success = await provider.register(username, password);
+    // 1. Register new user (보안 질문을 함께 저장해 비밀번호 찾기를 가능하게 합니다)
+    final success = await provider.register(
+      username,
+      password,
+      securityQuestion: _selectedQuestion,
+      securityAnswer: _answerController.text,
+    );
     if (success) {
       // 2. Automatically log in
       await provider.login(username, password);
 
       _usernameController.clear();
       _passwordController.clear();
+      _answerController.clear();
       setState(() {
         _isCreatingProfile = false;
+        _selectedQuestion = null;
       });
     } else {
       if (!mounted) return;
@@ -104,6 +116,156 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     }
+  }
+
+  /// 보안 질문 답변을 확인하고 비밀번호를 재설정하는 다이얼로그입니다.
+  void _showRecoveryDialog(String username) {
+    final provider = context.read<HealthProvider>();
+    const surface = Color(0xFF1E293B);
+
+    // 보안 질문이 등록되지 않은 기존 계정 안내
+    if (!provider.hasRecovery(username)) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: surface,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('복구 질문이 없습니다',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold)),
+          content: Text(
+            '[$username] 프로필에는 비밀번호 찾기용 보안 질문이 설정되어 있지 않습니다.\n\n'
+            '로그인에 성공한 뒤 설정 화면에서 보안 질문을 등록하면, 다음부터 이 화면에서 비밀번호를 재설정할 수 있습니다.\n\n'
+            '비밀번호가 기억나지 않는다면 관리자 프로필로 로그인해 설정 화면에서 강제로 변경할 수 있습니다.',
+            style: const TextStyle(
+                color: Color(0xFF94A3B8), fontSize: 13, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('확인',
+                  style: TextStyle(
+                      color: Color(0xFF60A5FA),
+                      fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final answerController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final recoveryFormKey = GlobalKey<FormState>();
+    final question = provider.getSecurityQuestion(username)!;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('비밀번호 재설정',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold)),
+        content: Form(
+          key: recoveryFormKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '[$username] 프로필의 보안 질문',
+                style:
+                    const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                question,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: answerController,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                decoration: _buildInputDecoration('질문에 대한 답변'),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty)
+                    return '답변을 입력해 주세요.';
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: newPasswordController,
+                obscureText: true,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                decoration: _buildInputDecoration('새 비밀번호'),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty)
+                    return '새 비밀번호를 입력해 주세요.';
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child:
+                const Text('취소', style: TextStyle(color: Color(0xFF94A3B8))),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (!recoveryFormKey.currentState!.validate()) return;
+
+              final success = await provider.resetPasswordWithRecovery(
+                username,
+                answerController.text,
+                newPasswordController.text,
+              );
+
+              if (!ctx.mounted) return;
+
+              if (success) {
+                Navigator.of(ctx).pop();
+                if (!mounted) return;
+                setState(() {
+                  _pinController.clear();
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해 주세요.'),
+                    backgroundColor: Colors.green,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                    content: Text('답변이 일치하지 않습니다. 다시 확인해 주세요.'),
+                    backgroundColor: Colors.redAccent,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('재설정',
+                style: TextStyle(
+                    color: Color(0xFF60A5FA), fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -222,6 +384,63 @@ class _LoginScreenState extends State<LoginScreen> {
                               return '비밀번호를 입력해 주세요.';
                             return null;
                           },
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          '비밀번호 찾기용 보안 질문',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 8),
+                        DropdownButtonFormField<String>(
+                          value: _selectedQuestion,
+                          isExpanded: true,
+                          dropdownColor: const Color(0xFF1E293B),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 14),
+                          decoration: _buildInputDecoration('질문을 선택하세요'),
+                          hint: const Text('질문을 선택하세요',
+                              style: TextStyle(
+                                  color: Color(0xFF475569), fontSize: 13)),
+                          items: HealthProvider.securityQuestions
+                              .map((q) => DropdownMenuItem(
+                                    value: q,
+                                    child: Text(q,
+                                        overflow: TextOverflow.ellipsis),
+                                  ))
+                              .toList(),
+                          onChanged: (val) {
+                            setState(() {
+                              _selectedQuestion = val;
+                            });
+                          },
+                          validator: (val) {
+                            if (val == null) return '보안 질문을 선택해 주세요.';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: _answerController,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 14),
+                          decoration: _buildInputDecoration('질문에 대한 답변 입력'),
+                          validator: (val) {
+                            if (val == null || val.trim().isEmpty)
+                              return '답변을 입력해 주세요.';
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '비밀번호를 잊었을 때 이 답변으로 재설정할 수 있습니다. 대소문자와 공백은 구분하지 않습니다.',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 11,
+                            height: 1.4,
+                          ),
                         ),
                         const SizedBox(height: 24),
                         SizedBox(
@@ -379,7 +598,28 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 4),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(0, 32),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () =>
+                              _showRecoveryDialog(_selectedProfile!),
+                          child: const Text(
+                            '비밀번호를 잊으셨나요?',
+                            style: TextStyle(
+                              color: Color(0xFF60A5FA),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
                       Row(
                         children: [
                           Expanded(
