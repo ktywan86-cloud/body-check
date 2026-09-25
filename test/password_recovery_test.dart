@@ -231,4 +231,92 @@ void main() {
       );
     });
   });
+
+  group('기기에서 직접 재설정 (보안 질문 없는 기존 계정)', () {
+    const q = '가장 좋아하는 음식은?';
+
+    test('프로필 이름이 맞으면 재설정되고 보안 질문이 함께 등록된다', () async {
+      await provider.register('아빠', '1234');
+
+      final ok = await provider.resetPasswordOnDevice(
+          '아빠', '아빠', '5678', q, 'Busan');
+
+      expect(ok, isTrue);
+      expect(await provider.login('아빠', '5678'), isTrue);
+      expect(provider.hasRecovery('아빠'), isTrue);
+      expect(provider.getSecurityQuestion('아빠'), q);
+    });
+
+    test('프로필 이름이 틀리면 아무것도 바뀌지 않는다', () async {
+      await provider.register('아빠', '1234');
+
+      final ok = await provider.resetPasswordOnDevice(
+          '아빠', '엄마', '5678', q, 'Busan');
+
+      expect(ok, isFalse);
+      expect(provider.hasRecovery('아빠'), isFalse);
+      expect(await provider.login('아빠', '1234'), isTrue);
+    });
+
+    test('이름 앞뒤 공백은 허용된다', () async {
+      await provider.register('아빠', '1234');
+
+      expect(
+        await provider.resetPasswordOnDevice(
+            '아빠', '  아빠 ', '5678', q, 'Busan'),
+        isTrue,
+      );
+    });
+
+    test('보안 질문이 이미 있으면 이 경로는 차단된다', () async {
+      await provider.register('아빠', '1234',
+          securityQuestion: q, securityAnswer: 'Busan');
+
+      final ok = await provider.resetPasswordOnDevice(
+          '아빠', '아빠', '5678', q, 'Seoul');
+
+      expect(ok, isFalse);
+      expect(await provider.login('아빠', '1234'), isTrue);
+    });
+
+    test('한 번 재설정하면 경로가 스스로 닫힌다', () async {
+      await provider.register('아빠', '1234');
+
+      expect(
+        await provider.resetPasswordOnDevice(
+            '아빠', '아빠', '5678', q, 'Busan'),
+        isTrue,
+      );
+      // 두 번째 시도는 보안 질문이 생겼으므로 거부되어야 합니다.
+      expect(
+        await provider.resetPasswordOnDevice(
+            '아빠', '아빠', '9999', q, 'Seoul'),
+        isFalse,
+      );
+      expect(await provider.login('아빠', '5678'), isTrue);
+    });
+
+    test('비밀번호나 보안 질문 답변이 비어 있으면 실패한다', () async {
+      await provider.register('아빠', '1234');
+
+      expect(
+        await provider.resetPasswordOnDevice('아빠', '아빠', '  ', q, 'Busan'),
+        isFalse,
+      );
+      expect(
+        await provider.resetPasswordOnDevice('아빠', '아빠', '5678', q, '   '),
+        isFalse,
+      );
+      expect(provider.hasRecovery('아빠'), isFalse);
+      expect(await provider.login('아빠', '1234'), isTrue);
+    });
+
+    test('없는 프로필에는 동작하지 않는다', () async {
+      expect(
+        await provider.resetPasswordOnDevice(
+            '없는사람', '없는사람', '5678', q, 'Busan'),
+        isFalse,
+      );
+    });
+  });
 }

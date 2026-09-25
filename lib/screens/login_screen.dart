@@ -118,42 +118,186 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  /// 보안 질문 답변을 확인하고 비밀번호를 재설정하는 다이얼로그입니다.
-  void _showRecoveryDialog(String username) {
+  /// 보안 질문이 없는 기존 프로필을 이 기기에서 인계받는 다이얼로그입니다.
+  ///
+  /// 계정은 기기마다 따로 저장되고 서버가 없어서, 보안 질문이 도입되기 전에
+  /// 만든 프로필은 이 경로가 아니면 되살릴 수 없습니다. 재설정과 동시에
+  /// 보안 질문을 등록시켜, 이후로는 이 항목이 나타나지 않게 합니다.
+  void _showDeviceResetDialog(String username) {
     final provider = context.read<HealthProvider>();
     const surface = Color(0xFF1E293B);
 
-    // 보안 질문이 등록되지 않은 기존 계정 안내
-    if (!provider.hasRecovery(username)) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
+    final nameController = TextEditingController();
+    final newPasswordController = TextEditingController();
+    final answerController = TextEditingController();
+    final resetFormKey = GlobalKey<FormState>();
+    String? selectedQuestion;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
           backgroundColor: surface,
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('복구 질문이 없습니다',
+          title: const Text('이 기기에서 비밀번호 재설정',
               style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,
                   fontWeight: FontWeight.bold)),
-          content: Text(
-            '[$username] 프로필에는 비밀번호 찾기용 보안 질문이 설정되어 있지 않습니다.\n\n'
-            '로그인에 성공한 뒤 설정 화면에서 보안 질문을 등록하면, 다음부터 이 화면에서 비밀번호를 재설정할 수 있습니다.\n\n'
-            '비밀번호가 기억나지 않는다면 관리자 프로필로 로그인해 설정 화면에서 강제로 변경할 수 있습니다.',
-            style: const TextStyle(
-                color: Color(0xFF94A3B8), fontSize: 13, height: 1.5),
+          content: SingleChildScrollView(
+            child: Form(
+              key: resetFormKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '[$username] 프로필에는 보안 질문이 없어 답변으로 확인할 수 없습니다. '
+                    '이 기기에 저장된 기록은 그대로 유지한 채 비밀번호만 새로 정합니다.',
+                    style: const TextStyle(
+                        color: Color(0xFF94A3B8), fontSize: 12, height: 1.5),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: nameController,
+                    autofocus: true,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration:
+                        _buildInputDecoration("확인을 위해 '$username' 입력"),
+                    validator: (val) {
+                      if (val == null || val.trim() != username) {
+                        return '프로필 이름이 정확하지 않습니다.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: newPasswordController,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: _buildInputDecoration('새 비밀번호'),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return '새 비밀번호를 입력해 주세요.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  const Text(
+                    '다시 잊지 않도록 보안 질문을 등록합니다',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: selectedQuestion,
+                    isExpanded: true,
+                    dropdownColor: surface,
+                    style:
+                        const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: _buildInputDecoration('질문을 선택하세요'),
+                    hint: const Text('질문을 선택하세요',
+                        style: TextStyle(
+                            color: Color(0xFF475569), fontSize: 13)),
+                    items: HealthProvider.securityQuestions
+                        .map((q) => DropdownMenuItem(
+                              value: q,
+                              child: Text(q, overflow: TextOverflow.ellipsis),
+                            ))
+                        .toList(),
+                    onChanged: (val) {
+                      setDialogState(() {
+                        selectedQuestion = val;
+                      });
+                    },
+                    validator: (val) {
+                      if (val == null) return '보안 질문을 선택해 주세요.';
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: answerController,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: _buildInputDecoration('질문에 대한 답변'),
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return '답변을 입력해 주세요.';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('확인',
+              child: const Text('취소',
+                  style: TextStyle(color: Color(0xFF94A3B8))),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (!resetFormKey.currentState!.validate()) return;
+
+                final success = await provider.resetPasswordOnDevice(
+                  username,
+                  nameController.text,
+                  newPasswordController.text,
+                  selectedQuestion!,
+                  answerController.text,
+                );
+
+                if (!ctx.mounted) return;
+
+                if (success) {
+                  Navigator.of(ctx).pop();
+                  if (!mounted) return;
+                  setState(() {
+                    _pinController.clear();
+                  });
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('재설정되었습니다. 새 비밀번호로 로그인해 주세요.'),
+                      backgroundColor: Colors.green,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(
+                      content: Text('재설정에 실패했습니다. 입력 내용을 다시 확인해 주세요.'),
+                      backgroundColor: Colors.redAccent,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+              child: const Text('재설정',
                   style: TextStyle(
                       color: Color(0xFF60A5FA),
                       fontWeight: FontWeight.bold)),
             ),
           ],
         ),
-      );
+      ),
+    );
+  }
+
+  /// 보안 질문 답변을 확인하고 비밀번호를 재설정하는 다이얼로그입니다.
+  void _showRecoveryDialog(String username) {
+    final provider = context.read<HealthProvider>();
+    const surface = Color(0xFF1E293B);
+
+    // 보안 질문이 없는 계정은 기기 재설정 경로로 넘깁니다.
+    if (!provider.hasRecovery(username)) {
+      _showDeviceResetDialog(username);
       return;
     }
 
@@ -608,10 +752,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                           onPressed: () =>
-                              _showRecoveryDialog(_selectedProfile!),
-                          child: const Text(
-                            '비밀번호를 잊으셨나요?',
-                            style: TextStyle(
+                              provider.hasRecovery(_selectedProfile!)
+                                  ? _showRecoveryDialog(_selectedProfile!)
+                                  : _showDeviceResetDialog(_selectedProfile!),
+                          child: Text(
+                            provider.hasRecovery(_selectedProfile!)
+                                ? '비밀번호를 잊으셨나요?'
+                                : '이 기기에서 비밀번호 재설정',
+                            style: const TextStyle(
                               color: Color(0xFF60A5FA),
                               fontSize: 13,
                               fontWeight: FontWeight.w600,

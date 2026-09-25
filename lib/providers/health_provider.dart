@@ -102,6 +102,42 @@ class HealthProvider extends ChangeNotifier {
     return saved == _normalizeAnswer(answer);
   }
 
+  /// 보안 질문이 없는 기존 프로필을 이 기기에서 직접 인계받습니다.
+  ///
+  /// 기기별 localStorage에만 계정이 있는 구조라, 보안 질문이 도입되기 전에
+  /// 만들어진 프로필은 비밀번호를 잊으면 되살릴 방법이 없습니다. 이 경로는
+  /// 그런 프로필을 옮기기 위한 일회성 통로입니다.
+  ///
+  /// 재설정과 동시에 보안 질문 등록을 강제하며, 보안 질문이 이미 있는
+  /// 프로필에는 동작하지 않습니다. 따라서 한 번 정리되면 경로가 스스로 닫힙니다.
+  Future<bool> resetPasswordOnDevice(
+    String username,
+    String typedUsername,
+    String newPassword,
+    String question,
+    String answer,
+  ) async {
+    final cred = _userCredentials[username];
+    if (cred == null) return false;
+
+    // 보안 질문이 이미 있으면 정상 복구 경로를 쓰도록 막습니다.
+    if (hasRecovery(username)) return false;
+
+    // 프로필 이름을 정확히 입력했을 때만 진행합니다.
+    if (typedUsername.trim() != username) return false;
+
+    final cleanPassword = newPassword.trim();
+    if (cleanPassword.isEmpty) return false;
+    if (question.trim().isEmpty || answer.trim().isEmpty) return false;
+
+    cred['password'] = cleanPassword;
+    cred['securityQuestion'] = question.trim();
+    cred['securityAnswer'] = _normalizeAnswer(answer);
+    await _storageService.saveUserCredentials(_userCredentials);
+    notifyListeners();
+    return true;
+  }
+
   /// 보안 질문 답변이 일치할 때만 비밀번호를 새로 설정합니다.
   Future<bool> resetPasswordWithRecovery(
       String username, String answer, String newPassword) async {
