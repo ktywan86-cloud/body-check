@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import '../providers/health_provider.dart';
+import 'goal_screen.dart';
 
 /// 앱의 설정을 조정하는 화면입니다.
 /// 키와 목표 체중을 입력하여 BMI를 계산하고, 다크 모드를 설정할 수 있습니다.
@@ -34,6 +35,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ollamaBaseUrlController.text = provider.ollamaBaseUrl;
     _ollamaModelController.text = provider.ollamaModel;
     _selectedAiEngine = provider.aiEngine;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 목표 계획이 목표 체중을 관리하는 동안에는 입력칸 값을 계획과 맞춰 둡니다.
+    // 모바일에서는 탭을 바꿔도 이 화면이 유지되므로, 다른 화면에서 계획을
+    // 바꾼 뒤 계획을 삭제했을 때 옛날 값이 남지 않게 하기 위함입니다.
+    final provider = context.read<HealthProvider>();
+    if (provider.weightGoal != null) {
+      final text = provider.targetWeight?.toString() ?? '';
+      if (_targetWeightController.text != text) {
+        _targetWeightController.text = text;
+      }
+    }
+  }
+
+  void _openGoalScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const GoalScreen()),
+    );
   }
 
   @override
@@ -235,10 +257,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     final provider = context.read<HealthProvider>();
     final double height = double.parse(_heightController.text);
-    final double targetWeight = double.parse(_targetWeightController.text);
-
     provider.updateHeight(height);
-    provider.updateTargetWeight(targetWeight);
+
+    // 목표 계획이 있으면 목표 체중은 계획 화면에서만 바꿉니다.
+    if (provider.weightGoal == null) {
+      final double targetWeight = double.parse(_targetWeightController.text);
+      provider.updateTargetWeight(targetWeight);
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1057,20 +1082,79 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: TextStyle(
                             fontSize: 13, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _targetWeightController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: _buildInputDecoration(
-                          '달성하고자 하는 목표 체중을 입력하세요.', 'kg', theme),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty)
-                          return '목표 체중을 입력해 주세요.';
-                        if (double.tryParse(value) == null ||
-                            double.parse(value) <= 0) return '올바른 체중 값을 입력하세요.';
-                        return null;
-                      },
-                    ),
+                    if (provider.weightGoal != null)
+                      // 계획이 있으면 입력칸 대신 계획 값과 계획 화면 버튼을 보여줍니다.
+                      // 입력칸을 남겨 두면 저장할 때 계획과 다른 값으로 덮어쓸 수 있습니다.
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: theme.primaryColor.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: theme.primaryColor.withOpacity(0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '${provider.weightGoal!.targetWeight.toStringAsFixed(1)} kg',
+                                    style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '목표 계획에서 관리됩니다.',
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: theme.colorScheme.onSurface
+                                            .withOpacity(0.5)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: _openGoalScreen,
+                              icon: const Icon(Icons.flag_outlined, size: 16),
+                              label: const Text('계획 열기',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      )
+                    else ...[
+                      TextFormField(
+                        controller: _targetWeightController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true),
+                        decoration: _buildInputDecoration(
+                            '달성하고자 하는 목표 체중을 입력하세요.', 'kg', theme),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty)
+                            return '목표 체중을 입력해 주세요.';
+                          if (double.tryParse(value) == null ||
+                              double.parse(value) <= 0)
+                            return '올바른 체중 값을 입력하세요.';
+                          return null;
+                        },
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _openGoalScreen,
+                          icon: const Icon(Icons.flag_outlined, size: 16),
+                          label: const Text('기간별 감량 계획 세우기',
+                              style: TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 20),
 
                     // 정보 저장 버튼

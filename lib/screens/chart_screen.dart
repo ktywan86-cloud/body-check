@@ -95,23 +95,38 @@ class ChartScreen extends StatelessWidget {
                             color: theme.primaryColor, size: 18),
                       ),
                       const SizedBox(width: 10),
-                      Text(
-                        '체중 추이 분석 리포트',
-                        style:
-                            theme.textTheme.titleLarge?.copyWith(fontSize: 15),
+                      Expanded(
+                        child: Text(
+                          provider.weightGoal != null
+                              ? '체중 추이와 목표 계획'
+                              : '체중 추이 분석 리포트',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleLarge
+                              ?.copyWith(fontSize: 15),
+                        ),
                       ),
-                      const Spacer(),
-                      // 범례 표시
-                      _buildLegendItem('실제 체중', theme.primaryColor),
-                      const SizedBox(width: 12),
-                      _buildLegendItem('7일 평균', Colors.amber, isDashed: true),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
+                  // 범례 표시 (좁은 화면에서도 넘치지 않도록 줄바꿈 허용)
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      _buildLegendItem('실제 체중', theme.primaryColor),
+                      _buildLegendItem('7일 평균', Colors.amber, isDashed: true),
+                      if (provider.weightGoal != null)
+                        _buildLegendItem('목표 계획', HealthChart.planColor,
+                            isDashed: true),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   Expanded(
                     child: HealthChart(
                       records: records,
                       targetWeight: provider.targetWeight,
+                      goal: provider.weightGoal,
+                      range: ChartRange.plan, // 계획이 있으면 시작일부터 목표일까지 전체
                     ),
                   ),
                 ],
@@ -181,6 +196,7 @@ class ChartScreen extends StatelessWidget {
   /// 그래프 상단의 색상 범례 표시용 헬퍼입니다.
   Widget _buildLegendItem(String label, Color color, {bool isDashed = false}) {
     return Row(
+      mainAxisSize: MainAxisSize.min, // Wrap 안에서 한 줄에 나란히 놓이도록
       children: [
         Container(
           width: 14,

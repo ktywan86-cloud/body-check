@@ -1,102 +1,8 @@
-import 'dart:convert';
-
-import 'package:body_check/models/health_record.dart';
 import 'package:body_check/providers/health_provider.dart';
 import 'package:body_check/services/analysis_service.dart';
-import 'package:body_check/services/storage_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 테스트용 인메모리 저장소입니다.
-/// 실제 구현과 동일하게 JSON 직렬화를 거치도록 해서, 저장/로드 과정에서
-/// 보안 질문 필드가 유실되지 않는지까지 함께 검증합니다.
-class FakeStorageService implements StorageService {
-  Map<String, dynamic> _credentials = {};
-  final List<HealthRecord> _records = [];
-  String? _activeUser;
-  String? _lastActiveUser;
-  bool _autoLogin = false;
-
-  @override
-  Future<void> init() async {}
-
-  @override
-  Future<List<HealthRecord>> loadRecords() async => List.of(_records);
-
-  @override
-  Future<void> saveRecord(HealthRecord record) async => _records.add(record);
-
-  @override
-  Future<void> deleteRecord(String id) async =>
-      _records.removeWhere((r) => r.id == id);
-
-  @override
-  Future<double?> loadTargetWeight() async => null;
-
-  @override
-  Future<void> saveTargetWeight(double weight) async {}
-
-  @override
-  Future<double?> loadHeight() async => null;
-
-  @override
-  Future<void> saveHeight(double height) async {}
-
-  @override
-  Future<bool> loadDarkMode() async => false;
-
-  @override
-  Future<void> saveDarkMode(bool isDark) async {}
-
-  @override
-  Future<String> loadAiEngine() async => 'local';
-
-  @override
-  Future<void> saveAiEngine(String engine) async {}
-
-  @override
-  Future<String> loadOllamaBaseUrl() async => 'http://localhost:11434';
-
-  @override
-  Future<void> saveOllamaBaseUrl(String url) async {}
-
-  @override
-  Future<String> loadOllamaModel() async => 'llama3';
-
-  @override
-  Future<void> saveOllamaModel(String model) async {}
-
-  @override
-  void setActiveUser(String? userId) => _activeUser = userId;
-
-  @override
-  String? get activeUser => _activeUser;
-
-  @override
-  Future<Map<String, dynamic>> loadUserCredentials() async =>
-      json.decode(json.encode(_credentials)) as Map<String, dynamic>;
-
-  @override
-  Future<void> saveUserCredentials(Map<String, dynamic> credentials) async {
-    _credentials =
-        json.decode(json.encode(credentials)) as Map<String, dynamic>;
-  }
-
-  @override
-  Future<String?> loadLastActiveUser() async => _lastActiveUser;
-
-  @override
-  Future<void> saveLastActiveUser(String? userId) async =>
-      _lastActiveUser = userId;
-
-  @override
-  Future<bool> loadAutoLoginEnabled() async => _autoLogin;
-
-  @override
-  Future<void> saveAutoLoginEnabled(bool enabled) async => _autoLogin = enabled;
-
-  @override
-  Future<void> wipeUserScopedData(String username) async {}
-}
+import 'fakes/fake_storage_service.dart';
 
 void main() {
   late HealthProvider provider;
@@ -199,8 +105,7 @@ void main() {
       );
     });
 
-    test('기존 계정도 나중에 보안 질문을 등록하면 복구할 수 있고, 저장 후 다시 불러와도 유지된다',
-        () async {
+    test('기존 계정도 나중에 보안 질문을 등록하면 복구할 수 있고, 저장 후 다시 불러와도 유지된다', () async {
       await provider.register('엄마', '1111');
 
       final saved = await provider.setRecovery(
@@ -238,8 +143,8 @@ void main() {
     test('프로필 이름이 맞으면 재설정되고 보안 질문이 함께 등록된다', () async {
       await provider.register('아빠', '1234');
 
-      final ok = await provider.resetPasswordOnDevice(
-          '아빠', '아빠', '5678', q, 'Busan');
+      final ok =
+          await provider.resetPasswordOnDevice('아빠', '아빠', '5678', q, 'Busan');
 
       expect(ok, isTrue);
       expect(await provider.login('아빠', '5678'), isTrue);
@@ -250,8 +155,8 @@ void main() {
     test('프로필 이름이 틀리면 아무것도 바뀌지 않는다', () async {
       await provider.register('아빠', '1234');
 
-      final ok = await provider.resetPasswordOnDevice(
-          '아빠', '엄마', '5678', q, 'Busan');
+      final ok =
+          await provider.resetPasswordOnDevice('아빠', '엄마', '5678', q, 'Busan');
 
       expect(ok, isFalse);
       expect(provider.hasRecovery('아빠'), isFalse);
@@ -262,8 +167,7 @@ void main() {
       await provider.register('아빠', '1234');
 
       expect(
-        await provider.resetPasswordOnDevice(
-            '아빠', '  아빠 ', '5678', q, 'Busan'),
+        await provider.resetPasswordOnDevice('아빠', '  아빠 ', '5678', q, 'Busan'),
         isTrue,
       );
     });
@@ -272,8 +176,8 @@ void main() {
       await provider.register('아빠', '1234',
           securityQuestion: q, securityAnswer: 'Busan');
 
-      final ok = await provider.resetPasswordOnDevice(
-          '아빠', '아빠', '5678', q, 'Seoul');
+      final ok =
+          await provider.resetPasswordOnDevice('아빠', '아빠', '5678', q, 'Seoul');
 
       expect(ok, isFalse);
       expect(await provider.login('아빠', '1234'), isTrue);
@@ -283,14 +187,12 @@ void main() {
       await provider.register('아빠', '1234');
 
       expect(
-        await provider.resetPasswordOnDevice(
-            '아빠', '아빠', '5678', q, 'Busan'),
+        await provider.resetPasswordOnDevice('아빠', '아빠', '5678', q, 'Busan'),
         isTrue,
       );
       // 두 번째 시도는 보안 질문이 생겼으므로 거부되어야 합니다.
       expect(
-        await provider.resetPasswordOnDevice(
-            '아빠', '아빠', '9999', q, 'Seoul'),
+        await provider.resetPasswordOnDevice('아빠', '아빠', '9999', q, 'Seoul'),
         isFalse,
       );
       expect(await provider.login('아빠', '5678'), isTrue);

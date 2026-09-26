@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/health_record.dart';
+import '../models/weight_goal.dart';
 
 /// 데이터 저장 관련 기능을 인터페이스로 정의(추상화)합니다.
 abstract class StorageService {
@@ -10,6 +11,10 @@ abstract class StorageService {
   Future<void> deleteRecord(String id);
   Future<double?> loadTargetWeight();
   Future<void> saveTargetWeight(double weight);
+
+  // 목표 체중 계획 (null을 저장하면 계획 삭제)
+  Future<WeightGoal?> loadWeightGoal();
+  Future<void> saveWeightGoal(WeightGoal? goal);
   Future<double?> loadHeight();
   Future<void> saveHeight(double height);
   Future<bool> loadDarkMode();
@@ -44,6 +49,7 @@ class LocalStorageService implements StorageService {
   // SharedPreferences 초기화 오류나 작동 불능을 대비한 인메모리 대체 저장소
   final Map<String, HealthRecord> _memoryRecords = {};
   double? _memoryTargetWeight;
+  WeightGoal? _memoryWeightGoal;
   double? _memoryHeight;
   bool _memoryDarkMode = false;
   bool _useFallback = false;
@@ -59,6 +65,7 @@ class LocalStorageService implements StorageService {
 
   static const String _keyRecords = 'health_records_key';
   static const String _keyTargetWeight = 'target_weight_key';
+  static const String _keyWeightGoal = 'weight_goal_key';
   static const String _keyHeight = 'user_height_key';
   static const String _keyDarkMode = 'dark_mode_key';
 
@@ -76,6 +83,7 @@ class LocalStorageService implements StorageService {
     // 사용자별 로드 데이터를 보장하기 위해 기존 인메모리 캐시를 초기화합니다.
     _memoryRecords.clear();
     _memoryTargetWeight = null;
+    _memoryWeightGoal = null;
     _memoryHeight = null;
     _memoryDarkMode = false;
     _memoryAiEngine = null;
@@ -200,6 +208,35 @@ class LocalStorageService implements StorageService {
       return;
     }
     await _prefs!.setDouble(_scopedKey(_keyTargetWeight), weight);
+  }
+
+  @override
+  Future<WeightGoal?> loadWeightGoal() async {
+    if (_useFallback || _prefs == null) {
+      return _memoryWeightGoal;
+    }
+    final jsonStr = _prefs!.getString(_scopedKey(_keyWeightGoal));
+    if (jsonStr == null) return null;
+    try {
+      return WeightGoal.fromJson(jsonStr);
+    } catch (e) {
+      // 손상된 계획은 없는 것으로 취급합니다. 저장된 값은 지우지 않고 남겨 둡니다.
+      print('Error decoding weight goal: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<void> saveWeightGoal(WeightGoal? goal) async {
+    if (_useFallback || _prefs == null) {
+      _memoryWeightGoal = goal;
+      return;
+    }
+    if (goal == null) {
+      await _prefs!.remove(_scopedKey(_keyWeightGoal));
+    } else {
+      await _prefs!.setString(_scopedKey(_keyWeightGoal), goal.toJson());
+    }
   }
 
   @override

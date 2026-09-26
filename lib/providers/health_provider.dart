@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/health_record.dart';
+import '../models/weight_goal.dart';
 import '../services/storage_service.dart';
 import '../services/analysis_service.dart';
 
@@ -11,6 +12,7 @@ class HealthProvider extends ChangeNotifier {
 
   List<HealthRecord> _records = [];
   double? _targetWeight;
+  WeightGoal? _weightGoal; // 목표 체중 계획 (없으면 목표 체중만 사용)
   double? _height;
   bool _isDarkMode = false;
   String _aiFeedback = '분석 데이터가 아직 부족합니다.';
@@ -36,6 +38,7 @@ class HealthProvider extends ChangeNotifier {
   // --- Getters (화면에서 가져다 쓸 데이터 필드들) ---
   List<HealthRecord> get records => _records;
   double? get targetWeight => _targetWeight;
+  WeightGoal? get weightGoal => _weightGoal;
   double? get height => _height;
   bool get isDarkMode => _isDarkMode;
   String get aiFeedback => _aiFeedback;
@@ -177,6 +180,10 @@ class HealthProvider extends ChangeNotifier {
     return cur - tar; // 양수이면 더 빼야 함, 음수이면 목표 달성 및 추가 감량됨
   }
 
+  /// 목표 계획 대비 진행 상태입니다. 계획이 없으면 null입니다.
+  GoalProgress? get goalProgress =>
+      _weightGoal?.evaluate(_records, DateTime.now());
+
   /// 최근 7일 동안 기록된 체중 데이터의 평균을 계산합니다. (최대 최근 7개 기록 대상)
   double? get sevenDayAverage {
     if (_records.isEmpty) return null;
@@ -306,6 +313,13 @@ class HealthProvider extends ChangeNotifier {
     if (_currentUserId != null) {
       _records = await _storageService.loadRecords();
       _targetWeight = await _storageService.loadTargetWeight();
+      _weightGoal = await _storageService.loadWeightGoal();
+      // 계획이 있으면 목표 체중은 계획 값을 따릅니다. (두 값이 어긋난 경우 보정)
+      final goal = _weightGoal;
+      if (goal != null && _targetWeight != goal.targetWeight) {
+        _targetWeight = goal.targetWeight;
+        await _storageService.saveTargetWeight(goal.targetWeight);
+      }
       _height = await _storageService.loadHeight();
       _isDarkMode = await _storageService.loadDarkMode();
 
@@ -393,6 +407,7 @@ class HealthProvider extends ChangeNotifier {
     // 상태 초기화
     _records = [];
     _targetWeight = null;
+    _weightGoal = null;
     _height = null;
     _isDarkMode = false;
     _aiFeedback = '분석 데이터가 아직 부족합니다.';
@@ -450,6 +465,40 @@ class HealthProvider extends ChangeNotifier {
     await _storageService.saveTargetWeight(weight);
 
     await updateAiFeedback();
+    notifyListeners();
+  }
+
+  // --- 목표 체중 계획 ---
+
+  /// 목표 계획을 저장합니다. 입력이 잘못됐으면 오류 문구를, 성공하면 null을 반환합니다.
+  ///
+  /// 계획의 목표 체중을 기존 목표 체중 값에도 함께 저장해, 목표 체중을 쓰는
+  /// 기존 화면(홈 카드, 차트 목표선, AI 피드백)이 그대로 동작하게 합니다.
+  Future<String?> updateWeightGoal(WeightGoal goal) async {
+    final error = WeightGoal.validateBase(
+      startWeight: goal.startWeight,
+      targetWeight: goal.targetWeight,
+      unit: goal.periodUnit,
+      periodCount: goal.periodCount,
+    );
+    if (error != null) return error;
+
+    _weightGoal = goal;
+    _targetWeight = goal.targetWeight;
+    await _storageService.saveWeightGoal(goal);
+    await _storageService.saveTargetWeight(goal.targetWeight);
+
+    // Ollama 응답이 느려도 계획 화면은 바로 갱신되도록 먼저 알립니다.
+    notifyListeners();
+    await updateAiFeedback();
+    notifyListeners();
+    return null;
+  }
+
+  /// 목표 계획을 삭제합니다. 목표 체중 값은 그대로 남겨 둡니다.
+  Future<void> clearWeightGoal() async {
+    _weightGoal = null;
+    await _storageService.saveWeightGoal(null);
     notifyListeners();
   }
 

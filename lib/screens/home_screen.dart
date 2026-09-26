@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/weight_goal.dart';
 import '../providers/health_provider.dart';
+import '../widgets/goal_status_style.dart';
 import '../widgets/summary_card.dart';
 import '../widgets/health_chart.dart';
+import 'goal_screen.dart';
 
 /// 메인 홈 대시보드 화면입니다.
 /// 최근 건강 지표 요약(현재 체중, 목표 체중, 7일 평균, 30일 변화 등)과
@@ -15,6 +18,12 @@ class HomeScreen extends StatelessWidget {
     final provider = context.watch<HealthProvider>();
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final goal = provider.weightGoal;
+    final goalProgress = provider.goalProgress;
+
+    void openGoal() => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const GoalScreen()),
+        );
 
     // 포맷용 도우미: null 값을 안전하게 문자열로 변경
     String formatDouble(double? val,
@@ -135,7 +144,9 @@ class HomeScreen extends StatelessWidget {
                 final double width = constraints.maxWidth;
                 // 모바일, 태블릿, PC 해상도에 맞춰 그리드 열 수 분기
                 int crossAxisCount = 2; // 모바일 기본값을 2열로 조정
-                double aspect = 1.15; // 모바일 화면 비율에 맞춰 콤팩트하게 조정
+                // 모바일 카드 비율. 1.15에서는 375px 폭 기준 카드 높이가 모자라
+                // 하단 안내 문구가 잘렸으므로, 두 줄 문구까지 들어가도록 세로로 늘립니다.
+                double aspect = 0.82;
 
                 if (width >= 900) {
                   crossAxisCount = 3;
@@ -178,6 +189,7 @@ class HomeScreen extends StatelessWidget {
                       unit: 'kg',
                       icon: Icons.track_changes,
                       iconColor: Colors.red,
+                      onTap: openGoal,
                       trailing: LayoutBuilder(
                         builder: (context, c) {
                           final remain = provider.remainingWeight;
@@ -264,6 +276,9 @@ class HomeScreen extends StatelessWidget {
                         ),
                       ),
                     ),
+
+                    // 목표 계획 진행 카드 (탭하면 계획 화면으로 이동)
+                    _buildGoalProgressCard(goal, goalProgress, openGoal),
                   ],
                 );
               },
@@ -302,12 +317,30 @@ class HomeScreen extends StatelessWidget {
                           color: theme.primaryColor, size: 20),
                     ],
                   ),
+                  if (goal != null) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Container(
+                            width: 14, height: 2, color: HealthChart.planColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          '목표 계획 (전체 계획은 차트 탭에서 볼 수 있어요)',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color:
+                                  theme.colorScheme.onSurface.withOpacity(0.5)),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   SizedBox(
                     height: 220,
                     child: HealthChart(
                       records: provider.records,
                       targetWeight: provider.targetWeight,
+                      goal: goal,
                     ),
                   ),
                 ],
@@ -315,6 +348,59 @@ class HomeScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 목표 계획의 진행률과 상태를 보여주는 요약 카드입니다.
+  Widget _buildGoalProgressCard(
+      WeightGoal? goal, GoalProgress? progress, VoidCallback onTap) {
+    if (goal == null || progress == null) {
+      return SummaryCard(
+        title: '목표 진행',
+        value: '-',
+        unit: '',
+        icon: Icons.flag_outlined,
+        iconColor: Colors.teal,
+        onTap: onTap,
+        trailing: const Text(
+          '탭해서 기간별 계획 세우기',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        ),
+      );
+    }
+
+    final style = GoalStatusStyle.of(progress.status);
+    final hasRecord = progress.status != GoalStatus.noData;
+    final index = progress.currentMilestoneIndex;
+    return SummaryCard(
+      title: '목표 진행',
+      value: hasRecord ? '${(progress.progressRatio * 100).round()}' : '-',
+      unit: hasRecord ? '%' : '',
+      icon: Icons.flag_outlined,
+      iconColor: style.color,
+      onTap: onTap,
+      trailing: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            style.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                fontSize: 12, color: style.color, fontWeight: FontWeight.bold),
+          ),
+          Text(
+            '$index${goal.periodUnit.ordinal} 목표 '
+            '${goal.plannedWeightFor(index).toStringAsFixed(1)}kg',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: Colors.grey),
+          ),
+        ],
       ),
     );
   }
