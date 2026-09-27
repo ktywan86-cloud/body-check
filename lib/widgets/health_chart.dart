@@ -394,9 +394,9 @@ class HealthChart extends StatelessWidget {
                 show: true,
                 getDotPainter: (spot, percent, barData, index) {
                   return FlDotCirclePainter(
-                    radius: 4,
+                    radius: 2,
                     color: theme.primaryColor,
-                    strokeWidth: 2,
+                    strokeWidth: 1,
                     strokeColor: theme.colorScheme.surface,
                   );
                 },
