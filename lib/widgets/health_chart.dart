@@ -175,10 +175,6 @@ class HealthChart extends StatelessWidget {
         }
       }
     }
-    final visibleMilestones = planMeta.whereType<GoalMilestone>().length;
-    // 기간별 목표가 너무 많으면 점을 생략해 선만 보여줍니다.
-    final showPlanDots = visibleMilestones <= 40;
-
     // --- Y축 범위 ---
     // 실제 기록, 목표 체중, 계획선을 모두 담도록 잡고 위아래로 3kg 여유를 둡니다.
     final allY = <double>[
@@ -436,29 +432,7 @@ class HealthChart extends StatelessWidget {
               color: planColor,
               barWidth: 2.0,
               dashArray: [6, 4],
-              dotData: FlDotData(
-                show: showPlanDots,
-                getDotPainter: (spot, percent, barData, index) {
-                  final milestone = planMeta[index];
-                  // 경계 보간 점은 점을 그리지 않습니다.
-                  if (milestone == null) {
-                    return FlDotCirclePainter(
-                      radius: 0,
-                      color: Colors.transparent,
-                      strokeWidth: 0,
-                    );
-                  }
-                  // 직접 수정한 기간은 속이 빈 점으로 구분합니다.
-                  return FlDotCirclePainter(
-                    radius: 3,
-                    color: milestone.isOverridden
-                        ? theme.colorScheme.surface
-                        : planColor,
-                    strokeWidth: 1.5,
-                    strokeColor: planColor,
-                  );
-                },
-              ),
+              dotData: const FlDotData(show: false), // 목표는 선으로만 표시
             ),
           ],
         ),
