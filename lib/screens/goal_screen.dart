@@ -21,9 +21,12 @@ class _GoalScreenState extends State<GoalScreen> {
   final _formKey = GlobalKey<FormState>();
   final _startController = TextEditingController();
   final _targetController = TextEditingController();
+  final _lossController = TextEditingController(); // 감량 목표 (= 시작 - 목표)
   final _countController = TextEditingController();
+  late DateTime _startDate;
   GoalPeriodUnit _unit = GoalPeriodUnit.week;
   bool _touched = false; // 사용자가 입력을 바꿨는지 (이탈 확인용)
+  bool _startWeightEdited = false; // 시작 체중을 직접 고쳤는지 (자동 제안 중단용)
   bool _saving = false;
 
   static final _dateFormat = DateFormat('yyyy.MM.dd');
@@ -35,12 +38,14 @@ class _GoalScreenState extends State<GoalScreen> {
     final provider = context.read<HealthProvider>();
     final saved = provider.weightGoal;
     if (saved != null) {
+      _startDate = saved.startDate;
       _startController.text = _fmt(saved.startWeight);
       _targetController.text = _fmt(saved.targetWeight);
       _countController.text = saved.periodCount.toString();
       _unit = saved.periodUnit;
     } else {
-      // 새 계획: 최근 체중을 시작 체중으로, 기존 목표 체중이 있으면 그대로 제안합니다.
+      // 새 계획: 오늘 시작, 최근 체중을 시작 체중으로, 기존 목표 체중이 있으면 제안합니다.
+      _startDate = WeightGoal.dateOnly(DateTime.now());
       final current = provider.currentWeight;
       final target = provider.targetWeight;
       _startController.text = current != null ? _fmt(current) : '';
@@ -50,12 +55,14 @@ class _GoalScreenState extends State<GoalScreen> {
               : '';
       _countController.text = '12';
     }
+    _syncLossFromTarget();
   }
 
   @override
   void dispose() {
     _startController.dispose();
     _targetController.dispose();
+    _lossController.dispose();
     _countController.dispose();
     super.dispose();
   }
@@ -64,22 +71,88 @@ class _GoalScreenState extends State<GoalScreen> {
 
   double? get _startValue => double.tryParse(_startController.text.trim());
   double? get _targetValue => double.tryParse(_targetController.text.trim());
+  double? get _lossValue => double.tryParse(_lossController.text.trim());
   int? get _countValue => int.tryParse(_countController.text.trim());
 
-  /// 저장되지 않은 계획(새 계획 또는 목표 체중·기간을 바꾼 상태)인지 확인합니다.
+  // --- 목표 체중 ↔ 감량 목표 연동 ---
+  // 두 칸 중 사용자가 고친 쪽을 기준으로 다른 쪽을 계산해 채웁니다.
+  // (코드로 text를 바꾸는 것은 onChanged를 부르지 않으므로 서로 무한히 갱신되지 않음)
+
+  void _syncLossFromTarget() {
+    final start = _startValue;
+    final target = _targetValue;
+    _lossController.text =
+        (start != null && target != null) ? _fmt(start - target) : '';
+  }
+
+  void _syncTargetFromLoss() {
+    final start = _startValue;
+    final loss = _lossValue;
+    _targetController.text =
+        (start != null && loss != null) ? _fmt(start - loss) : '';
+  }
+
+  /// 시작일 옆에 붙는 상대 표시입니다. 예: (오늘), (3일 전), (5일 후)
+  static String _relativeDay(DateTime date) {
+    final diff = WeightGoal.daysBetween(DateTime.now(), date);
+    if (diff == 0) return '오늘';
+    return diff < 0 ? '${-diff}일 전' : '$diff일 후';
+  }
+
+  /// 시작일을 고릅니다. 시작 체중을 직접 고치지 않았다면 그날 무렵의 기록으로 채웁니다.
+  Future<void> _pickStartDate(HealthProvider provider) async {
+    final today = WeightGoal.dateOnly(DateTime.now());
+    const range = Duration(days: WeightGoal.maxStartOffsetDays);
+    var first = today.subtract(range);
+    var last = today.add(range);
+    // 이미 범위 밖에 저장된 오래된 계획도 현재 값을 보여줄 수 있게 넓힙니다.
+    if (_startDate.isBefore(first)) first = _startDate;
+    if (_startDate.isAfter(last)) last = _startDate;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _startDate,
+      firstDate: first,
+      lastDate: last,
+      helpText: '계획 시작일 선택',
+      cancelText: '취소',
+      confirmText: '선택',
+      fieldLabelText: '시작일',
+      errorFormatText: '날짜 형식이 올바르지 않습니다.',
+      errorInvalidText: '선택할 수 없는 날짜입니다.',
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() {
+      _startDate = WeightGoal.dateOnly(picked);
+      _touched = true;
+      if (!_startWeightEdited) {
+        final record = WeightGoal.recordNear(provider.records, _startDate);
+        if (record != null) {
+          _startController.text = _fmt(record.weight);
+          _syncLossFromTarget();
+        }
+      }
+    });
+  }
+
+  /// 저장되지 않은 계획(새 계획 또는 시작·목표·기간을 바꾼 상태)인지 확인합니다.
   bool _isDraft(WeightGoal? saved) {
     if (saved == null) return true;
+    final start = _startValue;
     final target = _targetValue;
-    return target == null ||
+    return start == null ||
+        target == null ||
+        _startDate != saved.startDate ||
+        (start - saved.startWeight).abs() > 1e-9 ||
         (target - saved.targetWeight).abs() > 1e-9 ||
         _countValue != saved.periodCount ||
         _unit != saved.periodUnit;
   }
 
   /// 현재 입력값으로 만든 계획입니다. 입력이 올바르지 않으면 null입니다.
-  /// 저장된 계획이 있으면 시작 지점(체중·날짜)은 그대로 유지합니다.
-  WeightGoal? _draftGoal(WeightGoal? saved) {
-    final start = saved?.startWeight ?? _startValue;
+  WeightGoal? _draftGoal() {
+    final start = _startValue;
     final target = _targetValue;
     final count = _countValue;
     final error = WeightGoal.validateBase(
@@ -91,7 +164,7 @@ class _GoalScreenState extends State<GoalScreen> {
     if (error != null) return null;
     return WeightGoal(
       startWeight: start!,
-      startDate: saved?.startDate ?? DateTime.now(),
+      startDate: _startDate,
       targetWeight: target!,
       periodUnit: _unit,
       periodCount: count!,
@@ -106,7 +179,7 @@ class _GoalScreenState extends State<GoalScreen> {
     final provider = context.watch<HealthProvider>();
     final saved = provider.weightGoal;
     final isDraft = _isDraft(saved);
-    final goal = isDraft ? _draftGoal(saved) : saved;
+    final goal = isDraft ? _draftGoal() : saved;
     final progress = isDraft ? null : provider.goalProgress;
     final hasUnsavedInput = _touched && isDraft;
 
@@ -162,9 +235,9 @@ class _GoalScreenState extends State<GoalScreen> {
 
   Widget _buildSetupCard(
       ThemeData theme, HealthProvider provider, WeightGoal? saved) {
-    final records = provider.records;
-    final HealthRecord? latest = records.isNotEmpty ? records.first : null;
-    final draft = _draftGoal(saved);
+    final draft = _draftGoal();
+    final nearRecord = WeightGoal.recordNear(provider.records, _startDate);
+    final startOffset = WeightGoal.daysBetween(DateTime.now(), _startDate);
     final hintStyle = TextStyle(
         fontSize: 11,
         color: theme.colorScheme.onSurface.withOpacity(0.5),
@@ -175,18 +248,47 @@ class _GoalScreenState extends State<GoalScreen> {
       icon: Icons.flag_outlined,
       accent: theme.primaryColor,
       title: '계획 설정',
-      description: '목표 체중과 기간을 정하면 기간별 목표가 자동으로 나뉩니다.',
+      description: '언제부터, 얼마 동안, 얼마나 뺄지 정하면 기간별 목표가 자동으로 나뉩니다.',
       children: [
+        _label('시작일'),
+        const SizedBox(height: 6),
+        InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => _pickStartDate(provider),
+          child: InputDecorator(
+            decoration: _decoration('', '', theme).copyWith(
+              suffixText: null,
+              suffixIcon: Icon(Icons.calendar_month,
+                  size: 20, color: theme.primaryColor),
+            ),
+            child: Text(
+              '${_dateFormat.format(_startDate)}  (${_relativeDay(_startDate)})',
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          startOffset < 0
+              ? '지난 날짜부터 시작하면 그동안의 기록이 기간별 목표와 바로 비교됩니다.'
+              : (startOffset > 0
+                  ? '시작일 전까지는 "계획 시작 전"으로 표시됩니다.'
+                  : '오늘부터 계획이 시작됩니다. 날짜를 눌러 지난 날짜나 앞으로의 날짜로 바꿀 수 있어요.'),
+          style: hintStyle,
+        ),
+        const SizedBox(height: 18),
         _label('시작 체중'),
         const SizedBox(height: 6),
         TextFormField(
           controller: _startController,
-          readOnly: saved != null,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: _decoration('예: 80.0', 'kg', theme),
-          onChanged: (_) => _markTouched(),
+          onChanged: (_) {
+            _startWeightEdited = true;
+            _syncLossFromTarget(); // 목표 체중은 그대로 두고 감량 목표를 다시 계산
+            _markTouched();
+          },
           validator: (val) {
-            if (saved != null) return null;
             final v = double.tryParse(val?.trim() ?? '');
             if (v == null) return '시작 체중을 입력해 주세요.';
             if (v < WeightGoal.minWeight || v > WeightGoal.maxWeight) {
@@ -197,34 +299,79 @@ class _GoalScreenState extends State<GoalScreen> {
         ),
         const SizedBox(height: 6),
         Text(
-          saved != null
-              ? '시작일 ${_dateFormat.format(saved.startDate)}에 고정된 값입니다. 바꾸려면 아래 "오늘 기준으로 다시 시작"을 누르세요.'
-              : (latest != null
-                  ? '최근 기록 ${_dateFormat.format(latest.date)} · ${_fmt(latest.weight)}kg. 오늘부터 계획이 시작됩니다.'
-                  : '아직 체중 기록이 없어요. 현재 체중을 직접 입력해 주세요.'),
+          nearRecord != null
+              ? '시작일 무렵 기록: ${_dateFormat.format(nearRecord.date)} · ${_fmt(nearRecord.weight)}kg'
+              : '시작일 무렵 체중 기록이 없어요. 시작 체중을 직접 입력해 주세요.',
           style: hintStyle,
         ),
         const SizedBox(height: 18),
-        _label('목표 체중'),
-        const SizedBox(height: 6),
-        TextFormField(
-          controller: _targetController,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: _decoration('예: 72.0', 'kg', theme),
-          onChanged: (_) => _markTouched(),
-          validator: (val) {
-            final v = double.tryParse(val?.trim() ?? '');
-            if (v == null) return '목표 체중을 입력해 주세요.';
-            if (v < WeightGoal.minWeight || v > WeightGoal.maxWeight) {
-              return '20~300kg 사이로 입력해 주세요.';
-            }
-            final start = saved?.startWeight ?? _startValue;
-            if (start != null && v > start - 0.1 + 1e-9) {
-              return '시작 체중보다 낮아야 합니다. (감량 계획만 지원)';
-            }
-            return null;
-          },
+        // 목표 체중과 감량 목표는 서로 연동됩니다. 편한 쪽으로 입력하면 됩니다.
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label('목표 체중'),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _targetController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: _decoration('예: 72.0', 'kg', theme),
+                    onChanged: (_) {
+                      _syncLossFromTarget();
+                      _markTouched();
+                    },
+                    validator: (val) {
+                      final v = double.tryParse(val?.trim() ?? '');
+                      if (v == null) return '목표 체중을 입력해 주세요.';
+                      if (v < WeightGoal.minWeight ||
+                          v > WeightGoal.maxWeight) {
+                        return '20~300kg 사이로 입력해 주세요.';
+                      }
+                      final start = _startValue;
+                      if (start != null && v > start - 0.1 + 1e-9) {
+                        return '시작 체중보다 낮아야 합니다.';
+                      }
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _label('감량 목표'),
+                  const SizedBox(height: 6),
+                  TextFormField(
+                    controller: _lossController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: _decoration('예: 8.0', 'kg', theme),
+                    onChanged: (_) {
+                      _syncTargetFromLoss();
+                      _markTouched();
+                    },
+                    validator: (val) {
+                      final v = double.tryParse(val?.trim() ?? '');
+                      if (v == null) return '감량할 무게를 입력해 주세요.';
+                      if (v < 0.1 - 1e-9) return '0.1kg 이상 입력해 주세요.';
+                      return null;
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
+        const SizedBox(height: 6),
+        Text('목표 체중이나 감량 목표 중 편한 쪽을 입력하면 다른 쪽이 자동으로 계산됩니다. (감량 계획만 지원)',
+            style: hintStyle),
         const SizedBox(height: 18),
         _label('목표 기간'),
         const SizedBox(height: 6),
@@ -322,7 +469,7 @@ class _GoalScreenState extends State<GoalScreen> {
             color: theme.primaryColor,
             icon: Icons.info_outline,
             text:
-                '목표 체중이나 기간을 바꿔 저장하면, 직접 수정한 ${saved.overrides.length}개 기간이 자동 계산으로 돌아갑니다.',
+                '시작일·체중·기간을 바꿔 저장하면, 직접 수정한 ${saved.overrides.length}개 기간이 자동 계산으로 돌아갑니다.',
           ),
         ],
         if (progress != null) ...[
@@ -365,6 +512,18 @@ class _GoalScreenState extends State<GoalScreen> {
             backgroundColor: theme.dividerColor.withOpacity(0.3),
           ),
         ),
+        if (progress.status == GoalStatus.notStarted) ...[
+          const SizedBox(height: 8),
+          Text(
+            // 진행 상태는 저장된 계획에서만 보이므로 _startDate가 저장된 시작일과 같습니다.
+            '${_dateFormat.format(_startDate)} 시작까지 '
+            '${WeightGoal.daysBetween(DateTime.now(), _startDate)}일 남았습니다.',
+            style: TextStyle(
+                fontSize: 11,
+                color: theme.colorScheme.onSurface.withOpacity(0.55),
+                height: 1.4),
+          ),
+        ],
         if (progress.latestDate != null) ...[
           const SizedBox(height: 8),
           Text(
@@ -400,6 +559,7 @@ class _GoalScreenState extends State<GoalScreen> {
           : !periodStart.isBefore(today);
       final isCurrent = editable &&
           m.index == currentIndex &&
+          !today.isBefore(goal.startDate) && // 시작 전 계획은 진행 중인 기간이 없음
           !today.isAfter(goal.targetDate);
       final actual = isFuture ? null : goal.actualFor(m.index, records);
 
@@ -543,9 +703,14 @@ class _GoalScreenState extends State<GoalScreen> {
           ),
           // 실제 기록
           SizedBox(
-              width: 60,
-              child:
-                  Align(alignment: Alignment.centerRight, child: actualWidget)),
+            width: 60,
+            // 100kg 이상이거나 글꼴이 크면 칸을 넘을 수 있어, 넘칠 때만 축소합니다.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: actualWidget,
+            ),
+          ),
           // 수정 / 되돌리기
           if (editable)
             SizedBox(
@@ -692,14 +857,14 @@ class _GoalScreenState extends State<GoalScreen> {
 
   Future<void> _save(HealthProvider provider, WeightGoal? saved) async {
     if (!_formKey.currentState!.validate()) return;
-    final draft = _draftGoal(saved);
+    final draft = _draftGoal();
     if (draft == null) return;
 
     if (saved != null && saved.hasOverrides) {
       final ok = await _confirm(
         title: '직접 수정한 목표 초기화',
         message:
-            '목표 체중이나 기간이 바뀌어, 직접 수정한 ${saved.overrides.length}개 기간이 자동 계산으로 돌아갑니다. 계속할까요?',
+            '시작일·체중·기간이 바뀌어, 직접 수정한 ${saved.overrides.length}개 기간이 자동 계산으로 돌아갑니다. 계속할까요?',
         confirmLabel: '저장',
       );
       if (!ok) return;
@@ -738,7 +903,17 @@ class _GoalScreenState extends State<GoalScreen> {
     final error = await provider.updateWeightGoal(next);
     if (!mounted) return;
     if (error == null) {
-      setState(() => _startController.text = _fmt(current));
+      // 입력칸을 새로 저장된 계획과 맞춥니다. (다시 시작 전에 고치던 값은 버림)
+      setState(() {
+        _startDate = next.startDate;
+        _startController.text = _fmt(next.startWeight);
+        _targetController.text = _fmt(next.targetWeight);
+        _countController.text = next.periodCount.toString();
+        _unit = next.periodUnit;
+        _syncLossFromTarget();
+        _startWeightEdited = false;
+        _touched = false;
+      });
       _snack('오늘부터 계획을 다시 시작합니다.', Colors.green);
     } else {
       _snack('다시 시작할 수 없습니다: $error', Colors.redAccent);

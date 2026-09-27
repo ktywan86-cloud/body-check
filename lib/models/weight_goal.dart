@@ -19,6 +19,7 @@ extension GoalPeriodUnitLabel on GoalPeriodUnit {
 
 /// 계획 대비 진행 상태입니다.
 enum GoalStatus {
+  notStarted, // 시작일이 아직 오지 않음
   noData, // 계획 시작 이후 기록이 없음
   ahead, // 계획보다 앞서감
   onTrack, // 계획대로 진행 중
@@ -86,6 +87,9 @@ class WeightGoal {
   static const double maxWeight = 300;
   static const int maxWeeks = 104;
   static const int maxMonths = 24;
+
+  /// 시작일은 오늘 기준 앞뒤로 이 일수 안에서 고를 수 있습니다.
+  static const int maxStartOffsetDays = 365;
 
   /// 계획 대비 이 범위(kg) 안이면 '순조'로 봅니다. 하루 체중 변동을 감안한 여유입니다.
   static const double onTrackTolerance = 0.5;
@@ -313,6 +317,26 @@ class WeightGoal {
 
   // --- 기록과의 비교 ---
 
+  /// 시작일 무렵의 체중을 기록에서 찾아 시작 체중으로 제안합니다.
+  ///
+  /// 시작일 당일이나 그 이전의 가장 가까운 기록을 우선 쓰고, 없으면 시작일 뒤
+  /// 7일 안의 첫 기록을 씁니다. (과거 시작일인데 그 무렵 기록이 조금 늦게
+  /// 시작된 경우) 둘 다 없으면 null입니다.
+  static HealthRecord? recordNear(List<HealthRecord> records, DateTime date) {
+    final day = dateOnly(date);
+    HealthRecord? before;
+    HealthRecord? after;
+    for (final r in records) {
+      final d = dateOnly(r.date);
+      if (!d.isAfter(day)) {
+        if (before == null || r.date.isAfter(before.date)) before = r;
+      } else if (daysBetween(day, d) <= 7) {
+        if (after == null || r.date.isBefore(after.date)) after = r;
+      }
+    }
+    return before ?? after;
+  }
+
   /// index번째 기간 안에서 가장 최근 기록을 찾습니다. 없으면 null입니다.
   /// 첫 기간은 시작일 당일 기록도 포함합니다.
   HealthRecord? actualFor(int index, List<HealthRecord> records) {
@@ -338,6 +362,15 @@ class WeightGoal {
   GoalProgress evaluate(List<HealthRecord> records, DateTime today) {
     final day = dateOnly(today);
     final currentIndex = currentMilestoneIndex(day);
+
+    // 시작일이 아직 오지 않은 계획은 기록과 비교하지 않습니다.
+    if (day.isBefore(startDate)) {
+      return GoalProgress(
+        status: GoalStatus.notStarted,
+        progressRatio: 0,
+        currentMilestoneIndex: currentIndex,
+      );
+    }
 
     HealthRecord? latest;
     for (final r in records) {

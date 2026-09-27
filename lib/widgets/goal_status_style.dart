@@ -12,6 +12,9 @@ class GoalStatusStyle {
 
   static GoalStatusStyle of(GoalStatus status) {
     switch (status) {
+      case GoalStatus.notStarted:
+        return const GoalStatusStyle._(
+            '계획 시작 전', Colors.blueGrey, Icons.hourglass_top);
       case GoalStatus.noData:
         return const GoalStatusStyle._(
             '계획 시작 후 기록이 필요해요', Colors.grey, Icons.edit_note);

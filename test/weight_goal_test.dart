@@ -355,6 +355,50 @@ void main() {
     });
   });
 
+  group('시작일', () {
+    test('시작일이 아직 오지 않았으면 기록과 관계없이 시작 전', () {
+      final future = WeightGoal(
+        startWeight: 80,
+        startDate: DateTime(2026, 10, 1),
+        targetWeight: 72,
+        periodUnit: GoalPeriodUnit.week,
+        periodCount: 12,
+      );
+      final p = future.evaluate(
+          [_record(DateTime(2026, 9, 27), 80.2)], DateTime(2026, 9, 27));
+      expect(p.status, GoalStatus.notStarted);
+      expect(p.progressRatio, 0);
+    });
+
+    test('시작일 당일부터는 정상 판정한다', () {
+      final goal = _weekly(); // 1/5 시작
+      final p = goal.evaluate(
+          [_record(DateTime(2026, 1, 5, 7), 80)], DateTime(2026, 1, 5));
+      expect(p.status, GoalStatus.onTrack);
+    });
+
+    test('시작 체중 제안: 시작일 당일이나 이전의 가장 가까운 기록', () {
+      final records = [
+        _record(DateTime(2026, 1, 1), 81),
+        _record(DateTime(2026, 1, 4, 20), 80.4),
+        _record(DateTime(2026, 1, 6), 80),
+      ];
+      expect(
+          WeightGoal.recordNear(records, DateTime(2026, 1, 5))?.weight, 80.4);
+      expect(WeightGoal.recordNear(records, DateTime(2026, 1, 1))?.weight, 81);
+    });
+
+    test('시작 체중 제안: 이전 기록이 없으면 7일 안의 첫 기록', () {
+      final records = [
+        _record(DateTime(2026, 1, 10), 79.5),
+        _record(DateTime(2026, 1, 8), 80),
+      ];
+      expect(WeightGoal.recordNear(records, DateTime(2026, 1, 5))?.weight, 80);
+      expect(WeightGoal.recordNear(records, DateTime(2025, 12, 1)), isNull);
+      expect(WeightGoal.recordNear(const [], DateTime(2026, 1, 5)), isNull);
+    });
+  });
+
   group('기간별 실제 기록', () {
     final goal = _weekly();
 

@@ -373,11 +373,19 @@ class HomeScreen extends StatelessWidget {
     }
 
     final style = GoalStatusStyle.of(progress.status);
-    final hasRecord = progress.status != GoalStatus.noData;
+    final notStarted = progress.status == GoalStatus.notStarted;
+    final hasRecord = progress.status != GoalStatus.noData && !notStarted;
     final index = progress.currentMilestoneIndex;
+    final String value;
+    if (notStarted) {
+      // 시작 전에는 남은 일수를 D-day로 보여줍니다.
+      value = 'D-${WeightGoal.daysBetween(DateTime.now(), goal.startDate)}';
+    } else {
+      value = hasRecord ? '${(progress.progressRatio * 100).round()}' : '-';
+    }
     return SummaryCard(
       title: '목표 진행',
-      value: hasRecord ? '${(progress.progressRatio * 100).round()}' : '-',
+      value: value,
       unit: hasRecord ? '%' : '',
       icon: Icons.flag_outlined,
       iconColor: style.color,
@@ -394,8 +402,10 @@ class HomeScreen extends StatelessWidget {
                 fontSize: 12, color: style.color, fontWeight: FontWeight.bold),
           ),
           Text(
-            '$index${goal.periodUnit.ordinal} 목표 '
-            '${goal.plannedWeightFor(index).toStringAsFixed(1)}kg',
+            notStarted
+                ? '${goal.startDate.month}월 ${goal.startDate.day}일 시작'
+                : '$index${goal.periodUnit.ordinal} 목표 '
+                    '${goal.plannedWeightFor(index).toStringAsFixed(1)}kg',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 11, color: Colors.grey),
